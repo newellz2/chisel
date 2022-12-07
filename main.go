@@ -121,6 +121,13 @@ var serverHelp = `
     and "R:<local-interface>:<local-port>" for reverse port forwarding
     remotes. This file will be automatically reloaded on change.
 
+    --limit, Limit which remotes that can be handled by the server.
+    This file with a single array of strings, like:
+    [
+       "R:9.9.9.9:53",
+       "R:10.0.0.1:5900"
+    ]
+
     --auth, An optional string representing a single user with full
     access, in the form of <user:pass>. It is equivalent to creating an
     authfile with {"<user:pass>": [""]}. If unset, it will use the

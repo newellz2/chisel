@@ -22,17 +22,18 @@ import (
 
 // Config is the configuration for the chisel service
 type Config struct {
-	KeySeed   string
-	AuthFile  string
-	Auth      string
-	Proxy     string
-	Socks5    bool
-	Reverse   bool
-	KeepAlive time.Duration
-	TLS       TLSConfig
+	KeySeed    string
+	AuthFile   string
+	Auth       string
+	Proxy      string
+	LimitsFile string
+	Socks5     bool
+	Reverse    bool
+	KeepAlive  time.Duration
+	TLS        TLSConfig
 }
 
-// Server respresent a chisel service
+// Server represents a chisel service
 type Server struct {
 	*cio.Logger
 	config       *Config
@@ -41,6 +42,7 @@ type Server struct {
 	reverseProxy *httputil.ReverseProxy
 	sessCount    int32
 	sessions     *settings.Users
+	limits       *settings.LimitsIndex
 	sshConfig    *ssh.ServerConfig
 	users        *settings.UserIndex
 }
@@ -60,6 +62,13 @@ func NewServer(c *Config) (*Server, error) {
 		sessions:   settings.NewUsers(),
 	}
 	server.Info = true
+
+	if c.LimitsFile != "" {
+		if err := server.limits.LoadLimits(c.LimitsFile); err != nil {
+			return nil, err
+		}
+	}
+
 	server.users = settings.NewUserIndex(server.Logger)
 	if c.AuthFile != "" {
 		if err := server.users.LoadUsers(c.AuthFile); err != nil {
