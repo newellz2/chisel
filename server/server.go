@@ -63,13 +63,14 @@ func NewServer(c *Config) (*Server, error) {
 	}
 	server.Info = true
 
+	server.users = settings.NewUserIndex(server.Logger)
+	server.limits = settings.NewLimitsIndex(server.Logger)
+
 	if c.LimitsFile != "" {
 		if err := server.limits.LoadLimits(c.LimitsFile); err != nil {
 			return nil, err
 		}
 	}
-
-	server.users = settings.NewUserIndex(server.Logger)
 	if c.AuthFile != "" {
 		if err := server.users.LoadUsers(c.AuthFile); err != nil {
 			return nil, err

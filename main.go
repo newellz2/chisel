@@ -121,7 +121,7 @@ var serverHelp = `
     and "R:<local-interface>:<local-port>" for reverse port forwarding
     remotes. This file will be automatically reloaded on change.
 
-    --limit, Limit which remotes that can be handled by the server.
+    --limitsfile, Limits which remotes that can be handled by the server.
     This file with a single array of strings, like:
     [
        "R:9.9.9.9:53",
@@ -178,6 +178,7 @@ func server(args []string) {
 	config := &chserver.Config{}
 	flags.StringVar(&config.KeySeed, "key", "", "")
 	flags.StringVar(&config.AuthFile, "authfile", "", "")
+	flags.StringVar(&config.LimitsFile, "limitsfile", "", "")
 	flags.StringVar(&config.Auth, "auth", "", "")
 	flags.DurationVar(&config.KeepAlive, "keepalive", 25*time.Second, "")
 	flags.StringVar(&config.Proxy, "proxy", "", "")

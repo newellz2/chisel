@@ -19,7 +19,7 @@ func (s *Server) handleClientHandler(w http.ResponseWriter, r *http.Request) {
 	//websockets upgrade AND has chisel prefix
 	upgrade := strings.ToLower(r.Header.Get("Upgrade"))
 	protocol := r.Header.Get("Sec-WebSocket-Protocol")
-	if upgrade == "websocket"  {
+	if upgrade == "websocket" {
 		if protocol == chshare.ProtocolVersion {
 			s.handleWebsocket(w, r)
 			return
@@ -111,6 +111,9 @@ func (s *Server) handleWebsocket(w http.ResponseWriter, req *http.Request) {
 	}
 	//validate remotes
 	for _, r := range c.Remotes {
+		l.Debugf("Received remote: %s", r)
+		l.Debugf("Is remote limit in list: %s", s.limits.In(*r))
+
 		//if user is provided, ensure they have
 		//access to the desired remotes
 		if user != nil {
