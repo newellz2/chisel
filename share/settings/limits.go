@@ -45,6 +45,9 @@ func (l *Limits) In(limit Remote) bool {
 	same := false
 	for _, remote := range l.inner {
 		same = reflect.DeepEqual(remote, &limit)
+		if same == true {
+			break
+		}
 	}
 	l.RUnlock()
 	return same

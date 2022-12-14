@@ -1,6 +1,7 @@
 package chserver
 
 import (
+	"github.com/cloudflare/cfssl/revoke"
 	"net/http"
 	"strings"
 	"sync/atomic"
@@ -12,10 +13,36 @@ import (
 	"github.com/jpillora/chisel/share/tunnel"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/sync/errgroup"
+	"pault.ag/go/othername"
 )
 
 // handleClientHandler is the main http websocket handler for the chisel server
 func (s *Server) handleClientHandler(w http.ResponseWriter, r *http.Request) {
+	commonName := ""
+	otherName := ""
+	if r.TLS != nil && len(r.TLS.VerifiedChains) > 0 && len(r.TLS.VerifiedChains[0]) > 0 {
+		commonName = r.TLS.VerifiedChains[0][0].Subject.CommonName
+		names, err := othername.UPNs(r.TLS.VerifiedChains[0][0])
+		if err != nil {
+			w.WriteHeader(403)
+			w.Write([]byte("Your certificate is missing the otherName field."))
+			return
+		}
+
+		if len(names) == 1 {
+			otherName = names[0]
+		}
+
+		revoked, ok, err := revoke.VerifyCertificateError(r.TLS.VerifiedChains[0][0])
+		// Do what you want with the common name.
+		s.Infof("CommonName: %s, otherName: %s, Revoked: %v, OK:%v Error:%v \n", commonName, otherName, revoked, ok, err)
+		if revoked == true || err != nil {
+			w.WriteHeader(403)
+			w.Write([]byte("Your certificate has been revoked, expired or the CRL cannot be accessed"))
+			return
+		}
+	}
+
 	//websockets upgrade AND has chisel prefix
 	upgrade := strings.ToLower(r.Header.Get("Upgrade"))
 	protocol := r.Header.Get("Sec-WebSocket-Protocol")
@@ -49,6 +76,31 @@ func (s *Server) handleClientHandler(w http.ResponseWriter, r *http.Request) {
 
 // handleWebsocket is responsible for handling the websocket connection
 func (s *Server) handleWebsocket(w http.ResponseWriter, req *http.Request) {
+	commonName := ""
+	otherName := ""
+	if req.TLS != nil && len(req.TLS.VerifiedChains) > 0 && len(req.TLS.VerifiedChains[0]) > 0 {
+		commonName = req.TLS.VerifiedChains[0][0].Subject.CommonName
+		names, err := othername.UPNs(req.TLS.VerifiedChains[0][0])
+		if err != nil {
+			w.WriteHeader(403)
+			w.Write([]byte("Your certificate is missing the otherName field."))
+			return
+		}
+
+		if len(names) == 1 {
+			otherName = names[0]
+		}
+
+		revoked, ok, err := revoke.VerifyCertificateError(req.TLS.VerifiedChains[0][0])
+		// Do what you want with the common name.
+		s.Infof("CommonName: %s, otherName: %s, Revoked: %v, OK:%v Error:%v \n", commonName, otherName, revoked, ok, err)
+		if revoked == true || err != nil {
+			w.WriteHeader(403)
+			w.Write([]byte("Your certificate has been revoked, expired or the CRL cannot be accessed"))
+			return
+		}
+	}
+
 	id := atomic.AddInt32(&s.sessCount, 1)
 	l := s.Fork("session#%d", id)
 	wsConn, err := upgrader.Upgrade(w, req, nil)
@@ -75,6 +127,12 @@ func (s *Server) handleWebsocket(w http.ResponseWriter, req *http.Request) {
 		user = u
 		s.sessions.Del(sid)
 	}
+	if user != nil {
+		if user.Name != otherName {
+			s.Errorf("expecting config request")
+			return
+		}
+	}
 	// chisel server handshake (reverse of client handshake)
 	// verify configuration
 	l.Debugf("Verifying configuration")
@@ -91,6 +149,7 @@ func (s *Server) handleWebsocket(w http.ResponseWriter, req *http.Request) {
 		l.Debugf("Failed: %s", err)
 		r.Reply(false, []byte(err.Error()))
 	}
+
 	if r.Type != "config" {
 		failed(s.Errorf("expecting config request"))
 		return
@@ -111,8 +170,14 @@ func (s *Server) handleWebsocket(w http.ResponseWriter, req *http.Request) {
 	}
 	//validate remotes
 	for _, r := range c.Remotes {
-		l.Debugf("Received remote: %s", r)
-		l.Debugf("Is remote limit in list: %s", s.limits.In(*r))
+		allowed := s.limits.In(*r)
+		l.Debugf("Received remote: %v", r)
+		l.Debugf("Is the remote in the limits: %v", allowed)
+
+		if allowed == false {
+			failed(s.Errorf("Tunnel access denied: '%v'", r))
+			return
+		}
 
 		//if user is provided, ensure they have
 		//access to the desired remotes
@@ -126,7 +191,7 @@ func (s *Server) handleWebsocket(w http.ResponseWriter, req *http.Request) {
 		//confirm reverse tunnels are allowed
 		if r.Reverse && !s.config.Reverse {
 			l.Debugf("Denied reverse port forwarding request, please enable --reverse")
-			failed(s.Errorf("Reverse port forwaring not enabled on server"))
+			failed(s.Errorf("Reverse port forwarding not enabled on server"))
 			return
 		}
 		//confirm reverse tunnel is available
@@ -135,7 +200,7 @@ func (s *Server) handleWebsocket(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 	}
-	//successfuly validated config!
+	//successfully validated config!
 	r.Reply(true, nil)
 	//tunnel per ssh connection
 	tunnel := tunnel.New(tunnel.Config{
